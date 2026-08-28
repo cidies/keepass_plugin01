@@ -460,3 +460,9 @@ Copyright © 2026 Chris Ditze-Stephan.
 This plugin is released under the MIT License. It may be used, copied, modified, merged, published, distributed, sublicensed, and sold, provided that the copyright and license notice are retained. See `LICENSE` for the complete license text.
 
 The license terms of BouncyCastle also apply to that dependency.
+
+## Disclaimer
+
+This software is provided **“as is”**, without warranty of any kind, express or implied. The author is not liable for data loss, disclosure of credentials, loss of availability, business interruption, or other damages arising from the use or inability to use the software.
+
+Users are responsible for testing the plugin, protecting transfer passwords and `.kprx` files, maintaining backups, and determining whether the plugin is suitable for their environment. The complete and legally controlling warranty and liability disclaimer is contained in the `LICENSE` file.

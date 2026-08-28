@@ -1159,7 +1159,7 @@ namespace keepass_plugin01
                 MaximizeBox = false;
                 MinimizeBox = false;
                 ShowInTaskbar = false;
-                ClientSize = new Size(470, 245);
+                ClientSize = new Size(470, 315);
 
                 Label lifetimeLabel = new Label();
                 lifetimeLabel.AutoSize = true;
@@ -1206,15 +1206,24 @@ namespace keepass_plugin01
                     "Author: Chris Ditze-Stephan\r\n" +
                     "License: MIT - free to use, copy, modify and distribute";
 
+                Label disclaimerLabel = new Label();
+                disclaimerLabel.AutoSize = false;
+                disclaimerLabel.Location = new Point(18, 180);
+                disclaimerLabel.Size = new Size(435, 58);
+                disclaimerLabel.Text =
+                    "Disclaimer: This software is provided \"as is\", without " +
+                    "warranty of any kind. The author is not liable for data " +
+                    "loss or other damages.";
+
                 Button saveButton = new Button();
                 saveButton.Text = "Save";
-                saveButton.Location = new Point(302, 205);
+                saveButton.Location = new Point(302, 275);
                 saveButton.Size = new Size(75, 27);
                 saveButton.DialogResult = DialogResult.OK;
 
                 Button cancelButton = new Button();
                 cancelButton.Text = "Cancel";
-                cancelButton.Location = new Point(383, 205);
+                cancelButton.Location = new Point(383, 275);
                 cancelButton.Size = new Size(75, 27);
                 cancelButton.DialogResult = DialogResult.Cancel;
 
@@ -1224,6 +1233,7 @@ namespace keepass_plugin01
                 Controls.Add(clearAfterPasteInput);
                 Controls.Add(securityLabel);
                 Controls.Add(attributionLabel);
+                Controls.Add(disclaimerLabel);
                 Controls.Add(saveButton);
                 Controls.Add(cancelButton);
 
