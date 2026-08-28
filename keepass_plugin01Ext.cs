@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -23,7 +23,13 @@ namespace keepass_plugin01
         private const string ContainerFormat = "KeePassRecordExchange";
         private const int ContainerVersion = 1;
         private const int Pbkdf2Iterations = 600000;
-        private const int ClipboardLifetimeSeconds = 30;
+        private const int DefaultClipboardLifetimeSeconds = 30;
+        private const int MinimumClipboardLifetimeSeconds = 5;
+        private const int MaximumClipboardLifetimeSeconds = 600;
+        private const string ConfigClipboardLifetimeSeconds =
+            "Zentric.KeePassRecordExchange.ClipboardLifetimeSeconds";
+        private const string ConfigClearClipboardAfterPaste =
+            "Zentric.KeePassRecordExchange.ClearClipboardAfterPaste";
         private const int MaximumContainerCharacters = 140000000;
         private const long MaximumFileBytes = 100L * 1024L * 1024L;
 
@@ -33,6 +39,9 @@ namespace keepass_plugin01
         private IPluginHost pluginHost;
         private Timer clipboardTimer;
         private string lastClipboardValue;
+        private int clipboardLifetimeSeconds =
+            DefaultClipboardLifetimeSeconds;
+        private bool clearClipboardAfterPaste = true;
 
         public override bool Initialize(IPluginHost host)
         {
@@ -41,8 +50,19 @@ namespace keepass_plugin01
 
             pluginHost = host;
 
+            long configuredLifetime = pluginHost.CustomConfig.GetLong(
+                ConfigClipboardLifetimeSeconds,
+                DefaultClipboardLifetimeSeconds);
+
+            clipboardLifetimeSeconds = ClampClipboardLifetime(
+                configuredLifetime);
+
+            clearClipboardAfterPaste = pluginHost.CustomConfig.GetBool(
+                ConfigClearClipboardAfterPaste,
+                true);
+
             clipboardTimer = new Timer();
-            clipboardTimer.Interval = ClipboardLifetimeSeconds * 1000;
+            clipboardTimer.Interval = clipboardLifetimeSeconds * 1000;
             clipboardTimer.Tick += ClipboardTimerTick;
 
             return true;
@@ -60,27 +80,33 @@ namespace keepass_plugin01
                 new ToolStripMenuItem("Record Exchange");
 
             ToolStripMenuItem copy =
-                new ToolStripMenuItem("COPY RECORD ENCRYPTED");
+                new ToolStripMenuItem("Copy Record(s) Encrypted");
 
             ToolStripMenuItem paste =
-                new ToolStripMenuItem("PASTE RECORD ENCRYPTED");
+                new ToolStripMenuItem("Paste Record(s) Encrypted");
 
             ToolStripMenuItem exportFile =
-                new ToolStripMenuItem("EXPORT RECORD TO FILE");
+                new ToolStripMenuItem("Export Record(s) to File");
 
             ToolStripMenuItem importFile =
-                new ToolStripMenuItem("IMPORT RECORD FROM FILE");
+                new ToolStripMenuItem("Import Record(s) from File");
+
+            ToolStripMenuItem settings =
+                new ToolStripMenuItem("Settings...");
 
             copy.Click += CopyEncrypted;
             paste.Click += PasteEncrypted;
             exportFile.Click += ExportEncryptedFile;
             importFile.Click += ImportEncryptedFile;
+            settings.Click += OpenSettings;
 
             root.DropDownItems.Add(copy);
             root.DropDownItems.Add(paste);
             root.DropDownItems.Add(new ToolStripSeparator());
             root.DropDownItems.Add(exportFile);
             root.DropDownItems.Add(importFile);
+            root.DropDownItems.Add(new ToolStripSeparator());
+            root.DropDownItems.Add(settings);
 
             return root;
         }
@@ -96,7 +122,7 @@ namespace keepass_plugin01
                 string password;
                 if (!PasswordDialog.Request(
                     pluginHost.MainWindow,
-                    "COPY RECORD ENCRYPTED",
+                    "Copy Record(s) Encrypted",
                     true,
                     out password))
                 {
@@ -118,17 +144,17 @@ namespace keepass_plugin01
                 MessageBox.Show(
                     pluginHost.MainWindow,
                     records.Count +
-                    " Datensätze wurden verschlüsselt in die " +
-                    "Zwischenablage kopiert.\r\n\r\n" +
-                    "Automatische Löschung nach " +
-                    ClipboardLifetimeSeconds + " Sekunden.",
-                    "COPY RECORD ENCRYPTED",
+                    " record(s) were copied to the clipboard in encrypted " +
+                    "form.\r\n\r\n" +
+                    "The clipboard will be cleared automatically after " +
+                    clipboardLifetimeSeconds + " seconds.",
+                    "Copy Record(s) Encrypted",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                ShowError("Die Datensätze konnten nicht kopiert werden.", ex);
+                ShowError("The record(s) could not be copied.", ex);
             }
         }
 
@@ -142,8 +168,8 @@ namespace keepass_plugin01
                 {
                     MessageBox.Show(
                         pluginHost.MainWindow,
-                        "Die Zwischenablage enthält keinen Text.",
-                        "PASTE RECORD ENCRYPTED",
+                        "The clipboard does not contain text.",
+                        "Paste Record(s) Encrypted",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
                     return;
@@ -155,7 +181,7 @@ namespace keepass_plugin01
                 string password;
                 if (!PasswordDialog.Request(
                     pluginHost.MainWindow,
-                    "PASTE RECORD ENCRYPTED",
+                    "Paste Record(s) Encrypted",
                     false,
                     out password))
                 {
@@ -173,12 +199,13 @@ namespace keepass_plugin01
                 }
 
                 int count = ImportRecords(records);
-                ClearClipboardIfUnchanged(container);
+                if (clearClipboardAfterPaste)
+                    ClearClipboardIfUnchanged(container);
 
                 MessageBox.Show(
                     pluginHost.MainWindow,
-                    count + " Datensätze wurden erfolgreich angelegt.",
-                    "PASTE RECORD ENCRYPTED",
+                    count + " record(s) were imported successfully.",
+                    "Paste Record(s) Encrypted",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
@@ -192,7 +219,7 @@ namespace keepass_plugin01
             }
             catch (Exception ex)
             {
-                ShowError("Die Datensätze konnten nicht eingefügt werden.", ex);
+                ShowError("The record(s) could not be pasted.", ex);
             }
         }
 
@@ -207,7 +234,7 @@ namespace keepass_plugin01
                 string password;
                 if (!PasswordDialog.Request(
                     pluginHost.MainWindow,
-                    "EXPORT RECORD TO FILE",
+                    "Export Record(s) to File",
                     true,
                     out password))
                 {
@@ -226,9 +253,9 @@ namespace keepass_plugin01
 
                 using (SaveFileDialog dialog = new SaveFileDialog())
                 {
-                    dialog.Title = "Verschlüsselte KeePass-Datensätze exportieren";
+                    dialog.Title = "Export Encrypted KeePass Records";
                     dialog.Filter =
-                        "KeePass Record Exchange (*.kprx)|*.kprx|Alle Dateien (*.*)|*.*";
+                        "KeePass Record Exchange (*.kprx)|*.kprx|All files (*.*)|*.*";
                     dialog.DefaultExt = "kprx";
                     dialog.AddExtension = true;
                     dialog.OverwritePrompt = true;
@@ -245,15 +272,15 @@ namespace keepass_plugin01
                     MessageBox.Show(
                         pluginHost.MainWindow,
                         records.Count +
-                        " Datensätze wurden verschlüsselt exportiert.",
-                        "EXPORT RECORD TO FILE",
+                        " record(s) were exported in encrypted form.",
+                        "Export Record(s) to File",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
             }
             catch (Exception ex)
             {
-                ShowError("Die Exportdatei konnte nicht erstellt werden.", ex);
+                ShowError("The export file could not be created.", ex);
             }
         }
 
@@ -265,9 +292,9 @@ namespace keepass_plugin01
 
                 using (OpenFileDialog dialog = new OpenFileDialog())
                 {
-                    dialog.Title = "Verschlüsselte KeePass-Datensätze importieren";
+                    dialog.Title = "Import Encrypted KeePass Records";
                     dialog.Filter =
-                        "KeePass Record Exchange (*.kprx)|*.kprx|Alle Dateien (*.*)|*.*";
+                        "KeePass Record Exchange (*.kprx)|*.kprx|All files (*.*)|*.*";
                     dialog.CheckFileExists = true;
                     dialog.Multiselect = false;
 
@@ -281,7 +308,7 @@ namespace keepass_plugin01
                     if (fileInfo.Length > MaximumFileBytes)
                     {
                         throw new InvalidOperationException(
-                            "Die Datei überschreitet die zulässige Größe von 100 MB.");
+                            "The file exceeds the maximum permitted size of 100 MB.");
                     }
 
                     string container = File.ReadAllText(
@@ -293,7 +320,7 @@ namespace keepass_plugin01
                     string password;
                     if (!PasswordDialog.Request(
                         pluginHost.MainWindow,
-                        "IMPORT RECORD FROM FILE",
+                        "Import Record(s) from File",
                         false,
                         out password))
                     {
@@ -314,8 +341,8 @@ namespace keepass_plugin01
 
                     MessageBox.Show(
                         pluginHost.MainWindow,
-                        count + " Datensätze wurden erfolgreich importiert.",
-                        "IMPORT RECORD FROM FILE",
+                        count + " record(s) were imported successfully.",
+                        "Import Record(s) from File",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
@@ -330,7 +357,7 @@ namespace keepass_plugin01
             }
             catch (Exception ex)
             {
-                ShowError("Die Exportdatei konnte nicht importiert werden.", ex);
+                ShowError("The export file could not be imported.", ex);
             }
         }
 
@@ -343,7 +370,7 @@ namespace keepass_plugin01
             {
                 MessageBox.Show(
                     pluginHost.MainWindow,
-                    "Bitte mindestens einen KeePass-Eintrag auswählen.",
+                    "Please select at least one KeePass record.",
                     "Record Exchange",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -355,6 +382,69 @@ namespace keepass_plugin01
                 records.Add(CreateRecordData(entry));
 
             return records;
+        }
+
+        private void OpenSettings(object sender, EventArgs e)
+        {
+            try
+            {
+                int newLifetime;
+                bool newClearAfterPaste;
+
+                if (!SettingsDialog.Request(
+                    pluginHost.MainWindow,
+                    clipboardLifetimeSeconds,
+                    clearClipboardAfterPaste,
+                    out newLifetime,
+                    out newClearAfterPaste))
+                {
+                    return;
+                }
+
+                clipboardLifetimeSeconds = ClampClipboardLifetime(
+                    newLifetime);
+                clearClipboardAfterPaste = newClearAfterPaste;
+
+                pluginHost.CustomConfig.SetLong(
+                    ConfigClipboardLifetimeSeconds,
+                    clipboardLifetimeSeconds);
+
+                pluginHost.CustomConfig.SetBool(
+                    ConfigClearClipboardAfterPaste,
+                    clearClipboardAfterPaste);
+
+                clipboardTimer.Interval =
+                    clipboardLifetimeSeconds * 1000;
+
+                // Restart an active countdown using the new interval.
+                if (!String.IsNullOrEmpty(lastClipboardValue))
+                {
+                    clipboardTimer.Stop();
+                    clipboardTimer.Start();
+                }
+
+                MessageBox.Show(
+                    pluginHost.MainWindow,
+                    "The settings have been saved.",
+                    "Record Exchange Settings",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                ShowError("The settings could not be saved.", ex);
+            }
+        }
+
+        private static int ClampClipboardLifetime(long value)
+        {
+            if (value < MinimumClipboardLifetimeSeconds)
+                return MinimumClipboardLifetimeSeconds;
+
+            if (value > MaximumClipboardLifetimeSeconds)
+                return MaximumClipboardLifetimeSeconds;
+
+            return (int)value;
         }
 
         private string CreateEncryptedContainer(
@@ -426,7 +516,7 @@ namespace keepass_plugin01
                     cipherText.Length < 16)
                 {
                     throw new CryptographicException(
-                        "Ungültige kryptografische Parameter.");
+                        "Invalid cryptographic parameters.");
                 }
 
                 key = DeriveKey(password, salt, envelope.Iterations);
@@ -443,7 +533,7 @@ namespace keepass_plugin01
             catch (FormatException ex)
             {
                 throw new CryptographicException(
-                    "Ungültige Container-Kodierung.", ex);
+                    "Invalid container encoding.", ex);
             }
             finally
             {
@@ -574,7 +664,7 @@ namespace keepass_plugin01
                 String.IsNullOrWhiteSpace(envelope.Ciphertext))
             {
                 throw new InvalidOperationException(
-                    "Die Daten sind kein unterstützter KeePass-Record-Container.");
+                    "The data is not a supported KeePass record container.");
             }
         }
 
@@ -583,13 +673,13 @@ namespace keepass_plugin01
             if (records == null || records.Count == 0)
             {
                 throw new InvalidOperationException(
-                    "Der Container enthält keine Datensätze.");
+                    "The container does not contain any records.");
             }
 
             if (records.Count > 10000)
             {
                 throw new InvalidOperationException(
-                    "Der Container enthält zu viele Datensätze.");
+                    "The container contains too many records.");
             }
 
             foreach (RecordData record in records)
@@ -597,7 +687,7 @@ namespace keepass_plugin01
                 if (record == null || record.Fields == null)
                 {
                     throw new InvalidOperationException(
-                        "Der Container enthält einen ungültigen Datensatz.");
+                        "The container contains an invalid record.");
                 }
             }
         }
@@ -605,12 +695,12 @@ namespace keepass_plugin01
         private static void ValidateContainerLength(string container)
         {
             if (String.IsNullOrWhiteSpace(container))
-                throw new InvalidOperationException("Der Container ist leer.");
+                throw new InvalidOperationException("The container is empty.");
 
             if (container.Length > MaximumContainerCharacters)
             {
                 throw new InvalidOperationException(
-                    "Der Container überschreitet die zulässige Größe.");
+                    "The container exceeds the maximum permitted size.");
             }
         }
 
@@ -621,8 +711,8 @@ namespace keepass_plugin01
             DataObject data = new DataObject();
             data.SetData(DataFormats.UnicodeText, value);
 
-            // Diese von Windows definierten Formate verhindern nach Möglichkeit
-            // die Aufnahme in Clipboard History und Cloud Clipboard.
+            // These Windows-defined formats request exclusion from
+            // Clipboard History and Cloud Clipboard.
             data.SetData(
                 "ExcludeClipboardContentFromMonitorProcessing",
                 false,
@@ -664,7 +754,7 @@ namespace keepass_plugin01
             }
             catch
             {
-                // Clipboard kann kurzzeitig von einem anderen Prozess gesperrt sein.
+                // Another process can temporarily lock the clipboard.
             }
             finally
             {
@@ -717,7 +807,7 @@ namespace keepass_plugin01
             if (!pluginHost.Database.IsOpen)
             {
                 throw new InvalidOperationException(
-                    "Es ist keine KeePass-Datenbank geöffnet.");
+                    "No KeePass database is open.");
             }
         }
 
@@ -729,7 +819,7 @@ namespace keepass_plugin01
             if (targetGroup == null)
             {
                 throw new InvalidOperationException(
-                    "Es konnte keine Zielgruppe bestimmt werden.");
+                    "No target group could be determined.");
             }
 
             int importedCount = 0;
@@ -984,7 +1074,7 @@ namespace keepass_plugin01
         {
             MessageBox.Show(
                 pluginHost.MainWindow,
-                "Das Passwort ist falsch oder der Container wurde verändert.",
+                "The password is incorrect or the container has been modified.",
                 "KeePass Record Exchange",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
@@ -1054,6 +1144,128 @@ namespace keepass_plugin01
             public bool Protected { get; set; }
         }
 
+        private sealed class SettingsDialog : Form
+        {
+            private readonly NumericUpDown clipboardLifetimeInput;
+            private readonly CheckBox clearAfterPasteInput;
+
+            private SettingsDialog(
+                int clipboardLifetime,
+                bool clearAfterPaste)
+            {
+                Text = "Record Exchange Settings";
+                StartPosition = FormStartPosition.CenterParent;
+                FormBorderStyle = FormBorderStyle.FixedDialog;
+                MaximizeBox = false;
+                MinimizeBox = false;
+                ShowInTaskbar = false;
+                ClientSize = new Size(470, 245);
+
+                Label lifetimeLabel = new Label();
+                lifetimeLabel.AutoSize = true;
+                lifetimeLabel.Location = new Point(15, 23);
+                lifetimeLabel.Text = "Clear clipboard after:";
+
+                clipboardLifetimeInput = new NumericUpDown();
+                clipboardLifetimeInput.Location = new Point(185, 20);
+                clipboardLifetimeInput.Size = new Size(90, 23);
+                clipboardLifetimeInput.Minimum =
+                    MinimumClipboardLifetimeSeconds;
+                clipboardLifetimeInput.Maximum =
+                    MaximumClipboardLifetimeSeconds;
+                clipboardLifetimeInput.Increment = 5;
+                clipboardLifetimeInput.DecimalPlaces = 0;
+                clipboardLifetimeInput.Value = ClampClipboardLifetime(
+                    clipboardLifetime);
+
+                Label secondsLabel = new Label();
+                secondsLabel.AutoSize = true;
+                secondsLabel.Location = new Point(283, 23);
+                secondsLabel.Text = "seconds";
+
+                clearAfterPasteInput = new CheckBox();
+                clearAfterPasteInput.AutoSize = true;
+                clearAfterPasteInput.Location = new Point(18, 65);
+                clearAfterPasteInput.Text =
+                    "Clear clipboard immediately after a successful paste";
+                clearAfterPasteInput.Checked = clearAfterPaste;
+
+                Label securityLabel = new Label();
+                securityLabel.AutoSize = false;
+                securityLabel.Location = new Point(18, 92);
+                securityLabel.Size = new Size(435, 35);
+                securityLabel.Text =
+                    "Clipboard History and Cloud Clipboard exclusion always " +
+                    "remain enabled.";
+
+                Label attributionLabel = new Label();
+                attributionLabel.AutoSize = false;
+                attributionLabel.Location = new Point(18, 132);
+                attributionLabel.Size = new Size(435, 43);
+                attributionLabel.Text =
+                    "Author: Chris Ditze-Stephan\r\n" +
+                    "License: MIT - free to use, copy, modify and distribute";
+
+                Button saveButton = new Button();
+                saveButton.Text = "Save";
+                saveButton.Location = new Point(302, 205);
+                saveButton.Size = new Size(75, 27);
+                saveButton.DialogResult = DialogResult.OK;
+
+                Button cancelButton = new Button();
+                cancelButton.Text = "Cancel";
+                cancelButton.Location = new Point(383, 205);
+                cancelButton.Size = new Size(75, 27);
+                cancelButton.DialogResult = DialogResult.Cancel;
+
+                Controls.Add(lifetimeLabel);
+                Controls.Add(clipboardLifetimeInput);
+                Controls.Add(secondsLabel);
+                Controls.Add(clearAfterPasteInput);
+                Controls.Add(securityLabel);
+                Controls.Add(attributionLabel);
+                Controls.Add(saveButton);
+                Controls.Add(cancelButton);
+
+                AcceptButton = saveButton;
+                CancelButton = cancelButton;
+            }
+
+            private int ClipboardLifetime
+            {
+                get { return (int)clipboardLifetimeInput.Value; }
+            }
+
+            private bool ClearAfterPaste
+            {
+                get { return clearAfterPasteInput.Checked; }
+            }
+
+            public static bool Request(
+                IWin32Window owner,
+                int currentLifetime,
+                bool currentClearAfterPaste,
+                out int newLifetime,
+                out bool newClearAfterPaste)
+            {
+                using (SettingsDialog dialog = new SettingsDialog(
+                    currentLifetime,
+                    currentClearAfterPaste))
+                {
+                    if (dialog.ShowDialog(owner) == DialogResult.OK)
+                    {
+                        newLifetime = dialog.ClipboardLifetime;
+                        newClearAfterPaste = dialog.ClearAfterPaste;
+                        return true;
+                    }
+                }
+
+                newLifetime = currentLifetime;
+                newClearAfterPaste = currentClearAfterPaste;
+                return false;
+            }
+        }
+
         private sealed class PasswordDialog : Form
         {
             private readonly TextBox passwordBox;
@@ -1077,13 +1289,13 @@ namespace keepass_plugin01
                 explanation.Location = new Point(12, 12);
                 explanation.Size = new Size(405, 38);
                 explanation.Text = confirmation
-                    ? "Transferpasswort festlegen (mindestens 12 Zeichen):"
-                    : "Transferpasswort eingeben:";
+                    ? "Set a transfer password (at least 12 characters):"
+                    : "Enter the transfer password:";
 
                 Label passwordLabel = new Label();
                 passwordLabel.AutoSize = true;
                 passwordLabel.Location = new Point(12, 58);
-                passwordLabel.Text = "Passwort:";
+                passwordLabel.Text = "Password:";
 
                 passwordBox = new TextBox();
                 passwordBox.Location = new Point(125, 55);
@@ -1101,7 +1313,7 @@ namespace keepass_plugin01
                     Label confirmationLabel = new Label();
                     confirmationLabel.AutoSize = true;
                     confirmationLabel.Location = new Point(12, 94);
-                    confirmationLabel.Text = "Wiederholen:";
+                    confirmationLabel.Text = "Confirm:";
 
                     confirmationBox = new TextBox();
                     confirmationBox.Location = new Point(125, 91);
@@ -1125,7 +1337,7 @@ namespace keepass_plugin01
                 okButton.Click += OkButtonClick;
 
                 Button cancelButton = new Button();
-                cancelButton.Text = "Abbrechen";
+                cancelButton.Text = "Cancel";
                 cancelButton.Location = new Point(342, buttonTop);
                 cancelButton.Size = new Size(75, 27);
                 cancelButton.DialogResult = DialogResult.Cancel;
@@ -1148,7 +1360,7 @@ namespace keepass_plugin01
                 {
                     MessageBox.Show(
                         this,
-                        "Bitte ein Passwort eingeben.",
+                        "Please enter a password.",
                         Text,
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
@@ -1162,7 +1374,7 @@ namespace keepass_plugin01
                     {
                         MessageBox.Show(
                             this,
-                            "Das Transferpasswort muss mindestens 12 Zeichen lang sein.",
+                            "The transfer password must contain at least 12 characters.",
                             Text,
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);
@@ -1177,7 +1389,7 @@ namespace keepass_plugin01
                     {
                         MessageBox.Show(
                             this,
-                            "Die eingegebenen Passwörter stimmen nicht überein.",
+                            "The passwords do not match.",
                             Text,
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Warning);

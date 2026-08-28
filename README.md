@@ -1,69 +1,67 @@
 # KeePass Record Exchange Plugin
 
-`keepass_plugin01` erweitert KeePass 2.x um einen verschlüsselten Austausch vollständiger Einträge zwischen KeePass-Instanzen. Ein oder mehrere markierte Einträge können über die Windows-Zwischenablage oder über eine verschlüsselte `.kprx`-Datei exportiert und anschließend in eine andere geöffnete KeePass-Datenbank importiert werden.
+`keepass_plugin01` extends KeePass 2.x with an encrypted exchange mechanism for complete records. One or more selected records can be transferred between KeePass instances using the Windows clipboard or an encrypted `.kprx` file.
 
-Das Plugin überträgt:
+The plugin transfers:
 
-- alle Standardfelder wie Titel, Benutzername, Passwort, URL und Notizen,
-- benutzerdefinierte Felder,
-- den Schutzstatus der Felder,
-- Tags,
-- Ablaufstatus und Ablaufzeit,
-- das Standard-Icon,
-- Dateianhänge.
+- standard fields such as title, user name, password, URL, and notes;
+- custom fields and their protection status;
+- tags, expiration status, and expiration time;
+- the standard icon;
+- file attachments.
 
-UUID, Erstellungs- und Änderungszeitpunkte sowie die Änderungshistorie werden nicht übernommen. Beim Import wird bewusst ein neuer KeePass-Eintrag erzeugt.
+UUIDs, creation and modification timestamps, and record history are not transferred. Importing always creates a new KeePass record.
 
-## Funktionen
+## Features
 
-Das Plugin stellt unter **Extras → Record Exchange** und im Kontextmenü eines Eintrags folgende Befehle bereit:
+The plugin adds the following commands under **Tools → Record Exchange** and to the record context menu:
 
-| Befehl | Funktion |
+| Command | Purpose |
 |---|---|
-| `COPY RECORD ENCRYPTED` | Verschlüsselt die markierten Einträge und legt den verschlüsselten Container in der Windows-Zwischenablage ab. |
-| `PASTE RECORD ENCRYPTED` | Liest und entschlüsselt einen Container aus der Zwischenablage und legt daraus neue Einträge an. |
-| `EXPORT RECORD TO FILE` | Exportiert die markierten Einträge als verschlüsselte `.kprx`-Datei. |
-| `IMPORT RECORD FROM FILE` | Entschlüsselt eine `.kprx`-Datei und importiert die darin enthaltenen Einträge. |
+| `Copy Record(s) Encrypted` | Encrypts all selected records and places the encrypted container on the Windows clipboard. |
+| `Paste Record(s) Encrypted` | Reads and decrypts a container from the clipboard and creates new records. |
+| `Export Record(s) to File` | Exports all selected records to an encrypted `.kprx` file. |
+| `Import Record(s) from File` | Decrypts a `.kprx` file and imports all contained records. |
+| `Settings...` | Configures clipboard lifetime and clearing after a successful paste. |
 
-Mehrere Einträge können in KeePass mit `Strg` oder `Umschalt` gemeinsam markiert und in einem Vorgang übertragen werden.
+Multiple records can be selected using `Ctrl` or `Shift` and transferred in a single operation.
 
-## Sicherheitskonzept
+## Security Design
 
-Die eigentlichen KeePass-Datensätze werden vor der Ablage in der Zwischenablage oder in einer Datei vollständig verschlüsselt. Sichtbar bleiben ausschließlich die technischen Parameter, die zur Ableitung des Schlüssels und zur Entschlüsselung benötigt werden.
+The complete record payload is encrypted before it is placed on the clipboard or written to a file. Only the technical parameters required for key derivation and decryption remain visible.
 
-Verwendete Verfahren:
+The plugin uses:
 
-- Schlüsselableitung: PBKDF2-HMAC-SHA-256
-- Iterationen: 600.000
-- Salt: 16 zufällige Byte pro Export
-- Verschlüsselung: AES-256-GCM
-- Nonce: 12 zufällige Byte pro Export
-- Authentifizierungs-Tag: 128 Bit
-- zusätzliche authentifizierte Daten: Format- und Versionskennung
+- PBKDF2-HMAC-SHA-256 key derivation;
+- 600,000 iterations;
+- a new 16-byte random salt for every export;
+- AES-256-GCM encryption;
+- a new 12-byte random nonce for every export;
+- a 128-bit authentication tag;
+- additional authenticated data containing the format and version identifier.
 
-AES-GCM stellt sowohl Vertraulichkeit als auch Integrität bereit. Ein falsches Passwort und eine manipulierte Exportdatei führen absichtlich zur gleichen Fehlermeldung.
+AES-GCM provides confidentiality and integrity. An incorrect password and a modified container intentionally result in the same error message.
 
-### Transferpasswort
+### Transfer Password
 
-Das Transferpasswort:
+The transfer password:
 
-- wird beim Kopieren oder Datei-Export zweimal abgefragt,
-- muss mindestens zwölf Zeichen lang sein,
-- wird nicht in der Exportdatei gespeichert,
-- wird nicht als Hash gespeichert,
-- sollte nicht mit dem Masterpasswort der KeePass-Datenbank identisch sein.
+- is requested twice when copying or exporting;
+- must contain at least 12 characters;
+- is not stored in the container;
+- should not be identical to the master password of a KeePass database.
 
-Empfohlen wird eine eigenständige, lange Passphrase, zum Beispiel nach folgendem Muster:
+Use a separate, long passphrase, for example:
 
 ```text
-Segelboot-Kupfer-Atlas-Donau-47
+Sailboat-Copper-Atlas-Danube-47
 ```
 
-Die Verschlüsselung kann ein schwaches Transferpasswort nicht kompensieren. Eine gespeicherte `.kprx`-Datei erlaubt grundsätzlich einen Offline-Angriff auf das Transferpasswort.
+Encryption cannot compensate for a weak transfer password. A stored `.kprx` file can be used for offline password-guessing attacks.
 
-### Schutz der Zwischenablage
+### Clipboard Protection
 
-Bei `COPY RECORD ENCRYPTED` liegt ausschließlich der verschlüsselte Container in der Zwischenablage. Das Plugin kennzeichnet den Inhalt zusätzlich mit den von Windows vorgesehenen Formaten:
+`Copy Record(s) Encrypted` places only the encrypted container on the clipboard. The plugin also sets these Windows clipboard formats:
 
 ```text
 ExcludeClipboardContentFromMonitorProcessing
@@ -71,73 +69,87 @@ CanIncludeInClipboardHistory = 0
 CanUploadToCloudClipboard = 0
 ```
 
-Dadurch soll Windows den Inhalt weder in die Zwischenablagehistorie aufnehmen noch über das Cloud Clipboard synchronisieren.
+They request that Windows exclude the content from Clipboard History and Cloud Clipboard synchronization.
 
-Der Inhalt wird außerdem:
+The clipboard content is also:
 
-- nach 30 Sekunden automatisch gelöscht,
-- nach einem erfolgreichen Import sofort gelöscht,
-- beim Beenden des Plugins gelöscht.
+- automatically cleared after the configured number of seconds;
+- optionally cleared immediately after a successful paste;
+- cleared when the plugin terminates.
 
-Das Plugin löscht die Zwischenablage nur, wenn sie noch genau den zuvor vom Plugin geschriebenen Inhalt enthält. Ein Text, den der Benutzer zwischenzeitlich kopiert hat, wird nicht gelöscht.
+The default lifetime is 30 seconds and can be configured between 5 and 600 seconds. The clipboard is cleared only if it still contains exactly the value written by the plugin. Content copied by the user in the meantime is not removed.
 
-Diese Maßnahmen können nicht garantieren, dass Schadsoftware oder ein fremder Clipboard-Manager den Inhalt nicht vorher ausliest. Aufgrund der Verschlüsselung erhält ein solcher Prozess jedoch nicht unmittelbar die Kennwörter und übrigen Datensatzinhalte.
+These measures cannot guarantee that malware or a third-party clipboard manager will not read the content first. Such a process receives an encrypted container rather than plaintext record contents.
 
-## Voraussetzungen für die Entwicklung
+## Persistent Settings
+
+Settings are stored using KeePass `CustomConfig` and loaded when the plugin starts:
+
+```text
+Zentric.KeePassRecordExchange.ClipboardLifetimeSeconds
+Zentric.KeePassRecordExchange.ClearClipboardAfterPaste
+```
+
+The settings dialog provides:
+
+- **Clear clipboard after:** 5 to 600 seconds;
+- **Clear clipboard immediately after a successful paste**.
+
+Clipboard History and Cloud Clipboard exclusion remain permanently enabled for security reasons.
+
+## Development Requirements
 
 ### Software
 
-- Windows 10 oder Windows 11
-- KeePass 2.x, vorzugsweise die aktuelle offizielle Version
-- Visual Studio mit der Workload **.NET-Desktopentwicklung**
-- .NET Framework 4.8 Developer Pack
-- NuGet-Paketverwaltung
+- Windows 10 or Windows 11;
+- KeePass 2.x, preferably the current official release;
+- Visual Studio with the **.NET desktop development** workload;
+- .NET Framework 4.8 Developer Pack;
+- NuGet Package Manager.
 
-Das Projekt muss als folgende Vorlage angelegt werden:
+Create the project using:
 
 ```text
-C# → Klassenbibliothek (.NET Framework)
+C# → Class Library (.NET Framework)
 ```
 
-Zielframework:
+Target framework:
 
 ```text
 .NET Framework 4.8
 ```
 
-Nicht geeignet sind `.NET Standard`, `.NET Core`, .NET 6 oder andere moderne .NET-Klassenbibliotheken, da KeePass 2.x das Plugin als .NET-Framework-Assembly lädt.
+Do not use `.NET Standard`, `.NET Core`, .NET 6, or another modern .NET class-library template. KeePass 2.x loads this plugin as a .NET Framework assembly.
 
-## Erforderliche Assembly-Verweise
+## Required Assembly References
 
-Das Projekt benötigt folgende Verweise:
-
-| Assembly | Herkunft | Einstellung |
+| Assembly | Source | Required setting |
 |---|---|---|
-| `KeePass` | Verweis auf eine offizielle `KeePass.exe` | `Lokale Kopie = False` |
-| `System` | .NET Framework | Standard |
-| `System.Drawing` | .NET Framework | Standard |
-| `System.Web.Extensions` | .NET Framework | Standard |
-| `System.Windows.Forms` | .NET Framework | Standard |
-| `BouncyCastle.Cryptography` | NuGet | `Lokale Kopie = True` |
+| `KeePass` | Official `KeePass.exe` | `Copy Local = False` |
+| `System` | .NET Framework | Default |
+| `System.Drawing` | .NET Framework | Default |
+| `System.Web.Extensions` | .NET Framework | Default |
+| `System.Windows.Forms` | .NET Framework | Default |
+| `BouncyCastle.Cryptography` | NuGet | `Copy Local = True` |
 
-### KeePass-Verweis hinzufügen
+### Adding the KeePass Reference
 
-1. Im Projektmappen-Explorer mit der rechten Maustaste auf **Verweise** klicken.
-2. **Verweis hinzufügen → Durchsuchen** auswählen.
-3. Eine offizielle `KeePass.exe` auswählen, beispielsweise:
+1. Right-click **References** in Solution Explorer.
+2. Select **Add Reference → Browse**.
+3. Select an official `KeePass.exe`, for example:
 
    ```text
    D:\Program Files\KeePass Password Safe 2\KeePass.exe
    ```
 
-4. Den neuen Verweis `KeePass` markieren.
-5. Im Eigenschaftenfenster `Lokale Kopie` auf `False` setzen.
+4. Select the new `KeePass` reference.
+5. Set `Copy Local` to `False`.
 
-Es sollte möglichst dieselbe KeePass-Version referenziert werden, mit der das Plugin später getestet wird. Die offizielle portable KeePass-Version eignet sich ebenfalls als Referenz.
+Whenever possible, reference the same KeePass version that will be used for testing. The official portable package can also be used as the reference source.
 
-### Framework-Verweise hinzufügen
+### Adding Framework References
 
-Unter **Verweise → Verweis hinzufügen → Assemblys → Framework** müssen folgende Assemblys aktiviert werden:
+Under **References → Add Reference → Assemblies → Framework**, enable:
 
 ```text
 System.Drawing
@@ -145,59 +157,51 @@ System.Web.Extensions
 System.Windows.Forms
 ```
 
-### BouncyCastle installieren
+### Installing BouncyCastle
 
-In Visual Studio die Paket-Manager-Konsole öffnen:
-
-```text
-Extras → NuGet-Paket-Manager → Paket-Manager-Konsole
-```
-
-Danach ausführen:
+Open **Tools → NuGet Package Manager → Package Manager Console** and run:
 
 ```powershell
 Install-Package BouncyCastle.Cryptography -Version 2.7.0
 ```
 
-Unter **Verweise** muss anschließend `BouncyCastle.Cryptography` erscheinen. Für diesen Verweis muss gelten:
+`BouncyCastle.Cryptography` must then appear under **References** with:
 
 ```text
-Lokale Kopie = True
+Copy Local = True
 ```
 
-Beim Build muss dadurch neben der Plugin-DLL auch folgende Datei im Ausgabeverzeichnis entstehen:
+The build output must contain:
 
 ```text
 BouncyCastle.Cryptography.dll
 ```
 
-## Namenskonventionen von KeePass
+## KeePass Naming Conventions
 
-KeePass erwartet eine feste Beziehung zwischen Dateiname, Namespace und Hauptklasse:
+KeePass expects a fixed relationship between assembly filename, namespace, and main plugin class:
 
-| Element | Wert dieses Projekts |
+| Element | Value used by this project |
 |---|---|
-| Plugin-DLL | `keepass_plugin01.dll` |
+| Plugin DLL | `keepass_plugin01.dll` |
 | Namespace | `keepass_plugin01` |
-| Hauptklasse | `keepass_plugin01Ext` |
-
-Die Klassendefinition lautet deshalb:
+| Main class | `keepass_plugin01Ext` |
 
 ```csharp
 namespace keepass_plugin01
 {
     public sealed class keepass_plugin01Ext : Plugin
     {
-        // Plugin-Code
+        // Plugin code
     }
 }
 ```
 
-Wenn das Projekt oder die DLL umbenannt wird, müssen Namespace und Klassenname entsprechend angepasst werden.
+If the project or DLL is renamed, update the namespace and class name accordingly.
 
-## Assembly-Informationen
+## Assembly Information
 
-KeePass erkennt eine DLL anhand ihrer Assembly-Metadaten als Plugin. In `Properties\AssemblyInfo.cs` muss der Produktname exakt `KeePass Plugin` lauten:
+KeePass uses assembly metadata to recognize a DLL as a plugin. In `Properties\AssemblyInfo.cs`, the product name must be exactly `KeePass Plugin`:
 
 ```csharp
 [assembly: AssemblyTitle("KeePass Record Exchange")]
@@ -208,149 +212,124 @@ KeePass erkennt eine DLL anhand ihrer Assembly-Metadaten als Plugin. In `Propert
 [assembly: AssemblyFileVersion("1.0.0.0")]
 ```
 
-Entscheidend ist:
+Without `AssemblyProduct("KeePass Plugin")`, KeePass will not recognize the DLL as a plugin.
 
-```csharp
-[assembly: AssemblyProduct("KeePass Plugin")]
-```
-
-Ohne diesen Wert wird die DLL von KeePass nicht als Plugin erkannt.
-
-## Projektaufbau
-
-Ein minimaler Projektaufbau sieht so aus:
+## Project Structure
 
 ```text
 keepass_plugin01
 ├── Properties
 │   └── AssemblyInfo.cs
 ├── keepass_plugin01Ext.cs
+├── LICENSE
+├── README.md
 ├── packages.config
 └── keepass_plugin01.csproj
 ```
 
-Je nach NuGet-Konfiguration kann anstelle von `packages.config` ein `PackageReference` im Projekt verwendet werden.
+Depending on the NuGet configuration, a `PackageReference` may be used instead of `packages.config`.
 
-## Kompilieren
+## Building
 
-1. KeePass vollständig schließen.
-2. In Visual Studio oben `Debug` oder für eine Veröffentlichung `Release` auswählen.
-3. **Erstellen → Projektmappe neu erstellen** auswählen.
-4. Die Fehlerliste kontrollieren.
+1. Close KeePass completely.
+2. Select `Debug`, or `Release` for distribution.
+3. Select **Build → Rebuild Solution**.
+4. Check the Error List.
 
-Das Build-Ergebnis befindet sich normalerweise unter:
-
-```text
-bin\Debug\
-```
-
-oder:
-
-```text
-bin\Release\
-```
-
-Mindestens folgende Dateien müssen vorhanden sein:
+Output is normally written to `bin\Debug\` or `bin\Release\`. At least these files must be present:
 
 ```text
 keepass_plugin01.dll
 BouncyCastle.Cryptography.dll
 ```
 
-Eine Klassenbibliothek kann nicht direkt über den normalen Startknopf ausgeführt werden. Die Meldung, dass ein Projekt mit dem Ausgabetyp „Klassenbibliothek“ nicht direkt gestartet werden kann, ist daher normal.
+A class library cannot be launched directly using the normal Start command. Visual Studio's corresponding message is expected.
 
 ## Installation
 
-1. KeePass vollständig beenden.
-2. In KeePass **Extras → Plugins → Open Folder** verwenden, um den tatsächlich verwendeten Plugin-Ordner zu ermitteln.
-3. Folgende Dateien aus `bin\Debug` oder `bin\Release` direkt in diesen Ordner kopieren:
+1. Close KeePass completely.
+2. Use **Tools → Plugins → Open Folder** to locate the actual plugin directory.
+3. Copy these files from `bin\Debug` or `bin\Release` into that directory:
 
    ```text
    keepass_plugin01.dll
    BouncyCastle.Cryptography.dll
    ```
 
-Beispiel:
+Example:
 
 ```text
 D:\Program Files\KeePass Password Safe 2\Plugins\
 ```
 
-Der Ordner sollte anschließend unter anderem enthalten:
+4. Restart KeePass.
+5. Open **Tools → Plugins** and verify that the plugin is listed.
+
+After each build, replace at least `keepass_plugin01.dll`. If the BouncyCastle package version changed, replace `BouncyCastle.Cryptography.dll` as well.
+
+## User Guide
+
+### Copying Through the Clipboard
+
+1. Select one or more records. Use `Ctrl` or `Shift` for multiple selection.
+2. Select **Record Exchange → Copy Record(s) Encrypted**.
+3. Enter a transfer password containing at least 12 characters.
+4. Confirm the password.
+
+The encrypted container remains on the clipboard for no longer than the configured lifetime.
+
+### Pasting from the Clipboard
+
+1. Switch to the receiving KeePass instance and database.
+2. Select an existing record in the desired target group, or select the group itself.
+3. Select **Record Exchange → Paste Record(s) Encrypted**.
+4. Enter the transfer password used during copying.
+
+If enabled in Settings, the encrypted container is removed immediately after a successful import.
+
+### Exporting to a File
+
+1. Select one or more records.
+2. Select **Record Exchange → Export Record(s) to File**.
+3. Enter and confirm a transfer password.
+4. Select a filename and destination.
+
+The plugin uses the `.kprx` extension. The file does not contain record fields in plaintext.
+
+### Importing from a File
+
+1. Select the target group or a record within it.
+2. Select **Record Exchange → Import Record(s) from File**.
+3. Select the `.kprx` file.
+4. Enter the transfer password used during export.
+
+The export file is not deleted automatically after import.
+
+### Configuring Clipboard Behavior
+
+1. Open **Record Exchange → Settings...**.
+2. Set the clipboard lifetime between 5 and 600 seconds.
+3. Enable or disable immediate clearing after a successful paste.
+4. Select **Save**.
+
+The settings take effect immediately and remain available after restarting KeePass. The settings window also displays:
 
 ```text
-Plugins
-├── keepass_plugin01.dll
-└── BouncyCastle.Cryptography.dll
+Author: Chris Ditze-Stephan
+License: MIT - free to use, copy, modify and distribute
 ```
 
-4. KeePass neu starten.
-5. Unter **Extras → Plugins** prüfen, ob das Plugin aufgeführt wird.
+## Target Group Selection
 
-Bei jedem neuen Build muss mindestens `keepass_plugin01.dll` erneut in den Plugin-Ordner kopiert werden. Wenn die BouncyCastle-Version geändert wurde, muss auch `BouncyCastle.Cryptography.dll` ersetzt werden.
+The plugin selects the import group in this order:
 
-## Benutzung
+1. If a record is selected, its parent group is used.
+2. Otherwise, the currently selected group is used.
+3. If no group can be determined, the database root group is used.
 
-### Einträge über die Zwischenablage übertragen
+## Handling Existing Titles
 
-#### Kopieren
-
-1. Die gewünschten Einträge in KeePass auswählen.
-2. Für mehrere Einträge `Strg` oder `Umschalt` verwenden.
-3. Mit der rechten Maustaste auf die Auswahl klicken oder das Menü **Extras** öffnen.
-4. **Record Exchange → COPY RECORD ENCRYPTED** auswählen.
-5. Ein Transferpasswort mit mindestens zwölf Zeichen eingeben.
-6. Das Passwort ein zweites Mal bestätigen.
-
-Der verschlüsselte Container befindet sich anschließend für maximal 30 Sekunden in der Zwischenablage.
-
-#### Einfügen
-
-1. Zur KeePass-Instanz und Datenbank wechseln, in die importiert werden soll.
-2. In der gewünschten Zielgruppe einen vorhandenen Eintrag auswählen. Der Import erfolgt dann in derselben Gruppe.
-3. Alternativ nur die gewünschte Gruppe auswählen.
-4. **Record Exchange → PASTE RECORD ENCRYPTED** auswählen.
-5. Das beim Kopieren festgelegte Transferpasswort eingeben.
-
-Nach erfolgreichem Import wird der verschlüsselte Container sofort aus der Zwischenablage entfernt.
-
-### Einträge als Datei exportieren
-
-1. Einen oder mehrere Einträge markieren.
-2. **Record Exchange → EXPORT RECORD TO FILE** auswählen.
-3. Transferpasswort eingeben und bestätigen.
-4. Speicherort und Dateinamen auswählen.
-
-Das Plugin verwendet standardmäßig die Dateiendung:
-
-```text
-.kprx
-```
-
-Die Exportdatei enthält keine Datensatzfelder im Klartext.
-
-### Einträge aus einer Datei importieren
-
-1. Zielgruppe oder einen Eintrag innerhalb der Zielgruppe auswählen.
-2. **Record Exchange → IMPORT RECORD FROM FILE** auswählen.
-3. Die gewünschte `.kprx`-Datei auswählen.
-4. Das beim Export verwendete Transferpasswort eingeben.
-
-Die Exportdatei wird nach dem Import nicht automatisch gelöscht. Sie kann erneut verwendet werden, solange das Transferpasswort bekannt ist.
-
-## Auswahl der Zielgruppe
-
-Das Plugin bestimmt die Importgruppe nach folgender Reihenfolge:
-
-1. Ist ein Eintrag ausgewählt, wird dessen übergeordnete Gruppe verwendet.
-2. Andernfalls wird die aktuell ausgewählte KeePass-Gruppe verwendet.
-3. Falls keine Gruppe bestimmt werden kann, wird die Stammgruppe der geöffneten Datenbank verwendet.
-
-## Behandlung vorhandener Titel
-
-Vor jedem Import prüft das Plugin innerhalb der Zielgruppe, ob dort bereits ein Eintrag mit demselben Titel existiert. Die Prüfung ignoriert Groß- und Kleinschreibung.
-
-Bei einer Kollision wird `_copy` angehängt:
+Before importing each record, the plugin checks the target group for the same title using a case-insensitive comparison. If a collision occurs, `_copy` is appended:
 
 ```text
 Server
@@ -358,11 +337,11 @@ Server_copy
 Server_copy_copy
 ```
 
-Der vorhandene Eintrag wird nicht verändert oder überschrieben.
+Existing records are never modified or overwritten.
 
-## Containerformat
+## Container Format
 
-Die Zwischenablage und `.kprx`-Dateien verwenden dasselbe JSON-basierte Containerformat. Der äußere Container sieht prinzipiell so aus:
+Clipboard content and `.kprx` files use the same JSON-based format:
 
 ```json
 {
@@ -377,137 +356,107 @@ Die Zwischenablage und `.kprx`-Dateien verwenden dasselbe JSON-basierte Containe
 }
 ```
 
-Der GCM-Authentifizierungs-Tag ist Bestandteil des Base64-kodierten Feldes `Ciphertext`. Der entschlüsselte Inhalt besteht aus einer JSON-Liste mit einem oder mehreren KeePass-Datensätzen.
+The GCM authentication tag is included in `Ciphertext`. The decrypted payload is a JSON list containing one or more KeePass records. Fields outside `Ciphertext` do not expose titles, user names, passwords, notes, or attachments.
 
-Die Felder außerhalb von `Ciphertext` enthalten keine Titel, Benutzernamen, Passwörter, Notizen oder Anhänge.
+## Limits
 
-## Begrenzungen
+- no more than 10,000 records per container;
+- file size limited to approximately 100 MB;
+- restricted JSON recursion depth;
+- accepted PBKDF2 iteration values between 100,000 and 5,000,000 during import.
 
-Zur Reduzierung von Ressourcenmissbrauch gelten folgende Grenzen:
+Large attachments increase the container size because they are Base64-encoded. File export is preferable to the clipboard for large transfers.
 
-- maximal 10.000 Datensätze pro Container,
-- maximal ungefähr 100 MB Dateigröße,
-- begrenzte JSON-Rekursionstiefe,
-- PBKDF2-Iterationswerte beim Import zwischen 100.000 und 5.000.000.
+## Troubleshooting
 
-Sehr große Anhänge vergrößern den Container durch Base64-Kodierung deutlich. Für große Dateiübertragungen ist die Zwischenablage daher weniger geeignet als der `.kprx`-Export.
+### The Plugin Does Not Appear
 
-## Fehlerbehebung
+Verify that:
 
-### Plugin erscheint nicht in KeePass
+1. `keepass_plugin01.dll` is in the plugin directory used by KeePass.
+2. KeePass was completely restarted.
+3. `AssemblyProduct` is exactly `KeePass Plugin`.
+4. DLL name, namespace, and class name match.
 
-Prüfen:
+### BouncyCastle.Cryptography Could Not Be Found
 
-1. Liegt `keepass_plugin01.dll` im tatsächlich von KeePass verwendeten Plugin-Ordner?
-2. Wurde KeePass nach dem Kopieren vollständig neu gestartet?
-3. Lautet der Produktname in `AssemblyInfo.cs` exakt `KeePass Plugin`?
-4. Stimmen DLL-Name, Namespace und Klassenname überein?
+If KeePass reports that `BouncyCastle.Cryptography` could not be loaded:
 
-```text
-keepass_plugin01.dll
-namespace keepass_plugin01
-class keepass_plugin01Ext
-```
+1. Verify that the DLL exists under `bin\Debug` or `bin\Release`.
+2. Set `Copy Local = True` on the reference.
+3. Copy it directly next to `keepass_plugin01.dll`.
+4. Use the DLL from the same build output, not an arbitrary version.
 
-### BouncyCastle.Cryptography wurde nicht gefunden
+### Missing Framework Types
 
-Typische Meldung:
+| Error | Required reference |
+|---|---|
+| `System.Web.Script` or `JavaScriptSerializer` missing | `System.Web.Extensions` |
+| `ToolStripMenuItem` or `MessageBox` missing | `System.Windows.Forms` |
+| Type `Image` is in an unreferenced assembly | `System.Drawing` |
 
-```text
-Die Datei oder Assembly "BouncyCastle.Cryptography" oder eine Abhängigkeit davon wurde nicht gefunden.
-```
+Add missing references under **References → Add Reference → Assemblies → Framework**.
 
-Lösung:
+### The Project Cannot Be Started Directly
 
-1. Prüfen, ob `BouncyCastle.Cryptography.dll` unter `bin\Debug` beziehungsweise `bin\Release` erzeugt wurde.
-2. Beim BouncyCastle-Verweis `Lokale Kopie = True` setzen.
-3. `BouncyCastle.Cryptography.dll` direkt neben `keepass_plugin01.dll` in den KeePass-Plugin-Ordner kopieren.
-4. Keine beliebige Version aus dem Internet verwenden, sondern genau die DLL aus dem Ausgabeordner desselben Builds.
-
-### `System.Web.Script` oder `JavaScriptSerializer` wurde nicht gefunden
-
-Der Verweis `System.Web.Extensions` fehlt.
-
-```text
-Verweise → Verweis hinzufügen → Assemblys → Framework → System.Web.Extensions
-```
-
-### `ToolStripMenuItem` oder `MessageBox` wurde nicht gefunden
-
-Der Verweis `System.Windows.Forms` fehlt.
-
-```text
-Verweise → Verweis hinzufügen → Assemblys → Framework → System.Windows.Forms
-```
-
-### Der Typ `Image` befindet sich in einer nicht referenzierten Assembly
-
-Der Verweis `System.Drawing` fehlt.
-
-```text
-Verweise → Verweis hinzufügen → Assemblys → Framework → System.Drawing
-```
-
-### Projekt kann nicht direkt gestartet werden
-
-Das ist bei einer Klassenbibliothek normal. Zum Debuggen kann in den Projekteigenschaften unter **Debuggen** die KeePass-EXE als externes Programm eingetragen werden:
+This is normal for a class library. To debug, configure KeePass as the external program in the project's Debug settings:
 
 ```text
 D:\Program Files\KeePass Password Safe 2\KeePass.exe
 ```
 
-Die Plugin-DLL muss trotzdem im Plugin-Ordner liegen.
+The plugin DLL must still be present in the KeePass plugin directory.
 
-### Falsches Passwort oder Container verändert
+### Incorrect Password or Modified Container
 
-Aus Sicherheitsgründen verwendet das Plugin für beide Fälle dieselbe Meldung:
+Both cases intentionally produce:
 
 ```text
-Das Passwort ist falsch oder der Container wurde verändert.
+The password is incorrect or the container has been modified.
 ```
 
-Prüfen:
+Verify the password, clipboard completeness, file integrity, and container-format compatibility.
 
-- Wurde exakt dasselbe Transferpasswort verwendet?
-- Wurde der Zwischenablageinhalt unvollständig kopiert?
-- Wurde die `.kprx`-Datei verändert oder beschädigt?
-- Stammen Export und Import aus kompatiblen Containerformat-Versionen?
+## Updating the Plugin
 
-## Aktualisierung des Plugins
+1. Close KeePass.
+2. Build the new version.
+3. Replace `keepass_plugin01.dll`.
+4. Replace `BouncyCastle.Cryptography.dll` if its package version changed.
+5. Restart KeePass and verify the loaded version under **Tools → Plugins**.
 
-1. KeePass schließen.
-2. Neue Version kompilieren.
-3. Alte `keepass_plugin01.dll` im Plugin-Ordner ersetzen.
-4. Bei einer geänderten NuGet-Version auch `BouncyCastle.Cryptography.dll` ersetzen.
-5. KeePass neu starten und unter **Extras → Plugins** die geladene Version prüfen.
+Increment `AssemblyVersion` and `AssemblyFileVersion` consistently for published releases.
 
-Für veröffentlichte Versionen sollten `AssemblyVersion` und `AssemblyFileVersion` in `AssemblyInfo.cs` nachvollziehbar erhöht werden.
+## Security Limitations
 
-## Sicherheitsgrenzen
+The plugin protects exported data at rest and during transfer. It does not protect against:
 
-Das Plugin schützt exportierte Daten im Ruhezustand und während der Übertragung über Datei oder Zwischenablage. Es schützt nicht gegen:
+- malware with access to the KeePass process;
+- keyloggers capturing the transfer password;
+- memory dumps of the running process;
+- a weak or compromised transfer password;
+- modified plugin or KeePass binaries;
+- a fully compromised Windows user context.
 
-- Schadsoftware mit Zugriff auf den KeePass-Prozess,
-- Keylogger bei der Eingabe des Transferpassworts,
-- Speicherabbilder des laufenden Prozesses,
-- ein schwaches oder bereits kompromittiertes Transferpasswort,
-- manipulierte Plugin- oder KeePass-Binärdateien,
-- einen bereits vollständig kompromittierten Windows-Benutzerkontext.
+During export, the plugin must temporarily decrypt protected KeePass fields, serialize them, and process them in memory. Byte arrays are cleared where possible. .NET strings are immutable and cannot be reliably removed immediately from the managed heap.
 
-Während des Exports muss das Plugin die geschützten KeePass-Felder kurzzeitig entschlüsseln, serialisieren und im Prozessspeicher verarbeiten. Die verwendeten Byte-Arrays werden soweit möglich überschrieben. Zeichenketten in .NET sind unveränderlich und können nicht zuverlässig unmittelbar aus dem Managed Heap gelöscht werden.
+## Recommendations for Production Use
 
-## Empfehlungen für den produktiven Einsatz
+- Reference only official KeePass releases.
+- Obtain the plugin and BouncyCastle dependency from trusted sources.
+- Sign release builds using Authenticode.
+- Publish cryptographic hashes for released binaries.
+- Use a separate, strong transfer password.
+- Securely remove `.kprx` files when no longer required.
+- Do not distribute exports through uncontrolled channels.
+- Perform a security review before production use.
 
-- Nur offizielle KeePass-Versionen als Referenz verwenden.
-- Plugin und BouncyCastle-Abhängigkeit aus vertrauenswürdigen Quellen beziehen.
-- Release-Builds mit Authenticode signieren.
-- Hashwerte für veröffentlichte Binärdateien bereitstellen.
-- Eigenständige starke Transferpasswörter verwenden.
-- `.kprx`-Dateien nach dem vorgesehenen Transfer sicher entfernen.
-- Exportdateien nicht unkontrolliert per E-Mail oder Cloud-Speicher verteilen.
-- Quellcode und Abhängigkeiten vor einem produktiven Einsatz einem Security Review unterziehen.
+## Author and License
 
-## Lizenzierung
+Author: **Chris Ditze-Stephan**
 
-Für eine Veröffentlichung sollte eine eigene Lizenzdatei für das Plugin ergänzt werden. Zusätzlich sind die Lizenzbedingungen der verwendeten BouncyCastle-Bibliothek zu beachten.
+Copyright © 2026 Chris Ditze-Stephan.
 
+This plugin is released under the MIT License. It may be used, copied, modified, merged, published, distributed, sublicensed, and sold, provided that the copyright and license notice are retained. See `LICENSE` for the complete license text.
+
+The license terms of BouncyCastle also apply to that dependency.
